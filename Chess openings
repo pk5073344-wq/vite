@@ -1,0 +1,577 @@
+import React, { useMemo, useRef, useState, useEffect } from "react";
+import { Chess } from "chess.js";
+import { Chessboard } from "react-chessboard";
+import { motion } from "framer-motion";
+import { BookOpen, Play, RotateCcw, CheckCircle2, XCircle, Upload, Shuffle, LayoutList, ChevronRight } from "lucide-react";
+
+/**
+ * Chess Openings Trainer – Single-file React app
+ * -------------------------------------------------
+ * Features
+ * - Category + Opening browser (1.e4, 1.d4, Flank, plus “Other …” groups)
+ * - Interactive board with practice mode
+ * - Auto-plays opponent moves; you must play the correct replies
+ * - Instant feedback (Correct / Wrong) and move-by-move progress
+ * - Supports multiple lines per opening (randomized or selectable)
+ * - Easily extensible JSON for more openings
+ * - Includes “Other 1.e4 e5 Openings → Vienna Game” per your request
+ *
+ * Notes
+ * - This uses chess.js for rules and react-chessboard for the board.
+ * - All moves are provided in short SAN (e.g., "e4", "Nc3", "f4").
+ * - To add more lines, just extend OPENING_LIBRARY below.
+ */
+
+/**
+ * Data Model
+ * group: top-level mega-group like "1.e4", "1.d4", "Flank".
+ * section: sub-group (e.g., "Main", "Other 1.e4 e5 Openings").
+ * items: openings in that section. Each opening has multiple lines of SAN.
+ * side: which side you train ("white" or "black") – determines who plays first in practice.
+ */
+
+const OPENING_LIBRARY = [
+  {
+    group: "1.e4",
+    sections: [
+      {
+        title: "Main 1.e4 Openings",
+        items: [
+          {
+            id: "ruy-lopez",
+            name: "Ruy Lopez",
+            side: "white",
+            lines: [
+              ["e4", "e5", "Nf3", "Nc6", "Bb5"],
+              ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6", "O-O", "Be7"],
+            ],
+          },
+          {
+            id: "italian",
+            name: "Italian Game",
+            side: "white",
+            lines: [
+              ["e4", "e5", "Nf3", "Nc6", "Bc4", "Bc5"],
+              ["e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6", "d3"],
+            ],
+          },
+          {
+            id: "scotch",
+            name: "Scotch Game",
+            side: "white",
+            lines: [["e4", "e5", "Nf3", "Nc6", "d4", "exd4", "Nxd4"]],
+          },
+          {
+            id: "four-knights",
+            name: "Four Knights",
+            side: "white",
+            lines: [["e4", "e5", "Nf3", "Nc6", "Nc3", "Nf6"]],
+          },
+          {
+            id: "petroff",
+            name: "Petroff Defence",
+            side: "white",
+            lines: [["e4", "e5", "Nf3", "Nf6", "Nxe5", "d6", "Nf3"]],
+          },
+          {
+            id: "kings-gambit",
+            name: "King's Gambit",
+            side: "white",
+            lines: [["e4", "e5", "f4", "exf4", "Nf3"]],
+          },
+        ],
+      },
+      {
+        title: "Other 1.e4 e5 Openings",
+        items: [
+          {
+            id: "vienna",
+            name: "Vienna Game",
+            side: "white",
+            lines: [
+              ["e4", "e5", "Nc3"],
+              ["e4", "e5", "Nc3", "Nc6", "f4"], // Vienna Gambit
+              ["e4", "e5", "Nc3", "Nf6", "f4", "d5", "fxe5", "Nxe4"],
+            ],
+          },
+          {
+            id: "bishops-opening",
+            name: "Bishop's Opening",
+            side: "white",
+            lines: [["e4", "e5", "Bc4", "Nf6", "d3"]],
+          },
+          {
+            id: "philidor",
+            name: "Philidor Defence",
+            side: "white",
+            lines: [["e4", "e5", "Nf3", "d6", "d4", "Nf6"]],
+          },
+          {
+            id: "center-game",
+            name: "Center Game",
+            side: "white",
+            lines: [["e4", "e5", "d4", "exd4", "Qxd4", "Nc6", "Qe3"]],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    group: "1.d4",
+    sections: [
+      {
+        title: "Main 1.d4 Openings",
+        items: [
+          { id: "qgd", name: "Queen's Gambit Declined", side: "white", lines: [["d4", "d5", "c4", "e6", "Nc3", "Nf6", "Bg5"]] },
+          { id: "slav", name: "Slav Defence", side: "white", lines: [["d4", "d5", "c4", "c6", "Nf3", "Nf6", "Nc3", "dxc4"]] },
+          { id: "qga", name: "Queen's Gambit Accepted", side: "white", lines: [["d4", "d5", "c4", "dxc4", "Nf3", "Nf6", "e3"]] },
+          { id: "nimzo", name: "Nimzo-Indian Defence", side: "white", lines: [["d4", "Nf6", "c4", "e6", "Nc3", "Bb4"]] },
+          { id: "kings-indian", name: "King's Indian Defence", side: "white", lines: [["d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6"]] },
+        ],
+      },
+      {
+        title: "Other 1.d4 Openings",
+        items: [
+          { id: "trompowsky", name: "Trompowsky Attack", side: "white", lines: [["d4", "Nf6", "Bg5"]] },
+          { id: "london", name: "London System", side: "white", lines: [["d4", "d5", "Nf3", "Nf6", "Bf4"]] },
+          { id: "veresov", name: "Veresov", side: "white", lines: [["d4", "d5", "Nc3", "Nf6", "Bg5"]] },
+        ],
+      },
+    ],
+  },
+  {
+    group: "Flank Openings",
+    sections: [
+      {
+        title: "Main Flank Openings",
+        items: [
+          { id: "english", name: "English Opening", side: "white", lines: [["c4", "e5", "Nc3", "Nf6"]] },
+          { id: "reti", name: "Réti Opening", side: "white", lines: [["Nf3", "d5", "c4"]] },
+        ],
+      },
+      {
+        title: "Other Flank Openings",
+        items: [
+          { id: "bird", name: "Bird's Opening", side: "white", lines: [["f4", "d5", "Nf3"]] },
+          { id: "kings-fianchetto", name: "King's Fianchetto", side: "white", lines: [["g3", "d5", "Bg2"]] },
+        ],
+      },
+    ],
+  },
+];
+
+function useOpeningLines(opening) {
+  // Build the move arrays for practice from a chosen opening
+  return useMemo(() => {
+    if (!opening) return [];
+    return opening.lines.map((line) => [...line]);
+  }, [opening]);
+}
+
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function prettyLine(line) {
+  // Convert ["e4","e5","Nf3","Nc6","Bc4"] to a numbered string
+  const moves = [...line];
+  let res = [];
+  for (let i = 0; i < moves.length; i += 2) {
+    const num = i / 2 + 1;
+    const white = moves[i] ?? "";
+    const black = moves[i + 1] ?? "";
+    if (black) res.push(`${num}. ${white} ${black}`);
+    else res.push(`${num}. ${white}`);
+  }
+  return res.join(" ");
+}
+
+export default function OpeningsTrainer() {
+  // Selection state
+  const [groupIdx, setGroupIdx] = useState(0);
+  const [sectionIdx, setSectionIdx] = useState(0);
+  const [openingIdx, setOpeningIdx] = useState(0);
+
+  // Derived current opening
+  const currentSection = OPENING_LIBRARY[groupIdx]?.sections[sectionIdx];
+  const currentOpening = currentSection?.items[openingIdx];
+  const allLines = useOpeningLines(currentOpening);
+
+  // Training state
+  const [chess, setChess] = useState(() => new Chess());
+  const [expectedIndex, setExpectedIndex] = useState(0); // index in currentLine SAN array expected from USER
+  const [currentLine, setCurrentLine] = useState([]);
+  const [status, setStatus] = useState("idle"); // idle | practicing | complete
+  const [feedback, setFeedback] = useState(null); // null | {type:"ok"|"err", msg:string}
+  const [mistakes, setMistakes] = useState(0);
+  const [autoRandomize, setAutoRandomize] = useState(true);
+
+  // When opening changes, reset
+  useEffect(() => {
+    resetSession();
+  }, [groupIdx, sectionIdx, openingIdx]);
+
+  function startPractice(lineChoice = "random") {
+    const base = new Chess();
+    let chosen = [];
+    if (lineChoice === "random") chosen = pickRandom(allLines) || [];
+    else chosen = allLines[lineChoice] || [];
+
+    // If training BLACK, auto-play White's first move before expecting a reply
+    let toPlayIndex = 0;
+    if (currentOpening?.side === "black" && chosen.length > 0) {
+      const move = base.move(chosen[0]);
+      if (!move) {
+        setFeedback({ type: "err", msg: `Invalid first SAN: ${chosen[0]}` });
+        return;
+      }
+      toPlayIndex = 1; // user expected to reply with index 1
+    }
+
+    setChess(base);
+    setCurrentLine(chosen);
+    setExpectedIndex(toPlayIndex);
+    setMistakes(0);
+    setStatus("practicing");
+    setFeedback(null);
+
+    // If training WHITE and opponent is supposed to reply automatically after your move,
+    // that is handled after each correct user move below.
+  }
+
+  function resetSession() {
+    setChess(new Chess());
+    setCurrentLine([]);
+    setExpectedIndex(0);
+    setStatus("idle");
+    setFeedback(null);
+    setMistakes(0);
+  }
+
+  function autoPlayOpponent(nextIndex, game) {
+    // If there is an opponent move following user's correct move, play it.
+    if (nextIndex < currentLine.length) {
+      const oppMoveSan = currentLine[nextIndex];
+      const mv = game.move(oppMoveSan);
+      if (!mv) {
+        setFeedback({ type: "err", msg: `Invalid opponent SAN: ${oppMoveSan}` });
+        return { game, nextExpected: nextIndex }; // stop
+      }
+      return { game, nextExpected: nextIndex + 1 };
+    }
+    return { game, nextExpected: nextIndex };
+  }
+
+  function onDrop(sourceSquare, targetSquare, piece) {
+    if (status !== "practicing") return false;
+    const game = new Chess(chess.fen());
+    const moveAttempt = game.move({ from: sourceSquare, to: targetSquare, promotion: "q" });
+    if (!moveAttempt) return false; // illegal
+
+    // Compare SAN with expected
+    const expectedSan = currentLine[expectedIndex];
+
+    if (!expectedSan) {
+      // No more expected moves – user has completed the line
+      setStatus("complete");
+      setFeedback({ type: "ok", msg: "Line complete!" });
+      setChess(game);
+      return true;
+    }
+
+    if (moveAttempt.san === expectedSan) {
+      // Correct user move
+      let { game: afterOpp, nextExpected } = autoPlayOpponent(expectedIndex + 1, game);
+      setChess(afterOpp);
+
+      if (nextExpected >= currentLine.length) {
+        setExpectedIndex(nextExpected);
+        setStatus("complete");
+        setFeedback({ type: "ok", msg: "Line complete!" });
+      } else {
+        setExpectedIndex(nextExpected);
+        setFeedback({ type: "ok", msg: `Good: ${moveAttempt.san}` });
+      }
+
+      return true;
+    } else {
+      // Wrong – reject and keep board as-is
+      setFeedback({ type: "err", msg: `Expected ${expectedSan}, not ${moveAttempt.san}` });
+      setMistakes((m) => m + 1);
+      return false;
+    }
+  }
+
+  function showHint() {
+    if (status !== "practicing") return;
+    const need = currentLine[expectedIndex];
+    if (need) setFeedback({ type: "ok", msg: `Hint: play ${need}` });
+  }
+
+  function playSolutionMove() {
+    if (status !== "practicing") return;
+    const game = new Chess(chess.fen());
+    const need = currentLine[expectedIndex];
+    if (!need) return;
+    const mv = game.move(need);
+    if (!mv) {
+      setFeedback({ type: "err", msg: `Invalid SAN in solution: ${need}` });
+      return;
+    }
+    let { game: afterOpp, nextExpected } = autoPlayOpponent(expectedIndex + 1, game);
+    setChess(afterOpp);
+    if (nextExpected >= currentLine.length) {
+      setExpectedIndex(nextExpected);
+      setStatus("complete");
+      setFeedback({ type: "ok", msg: "Line complete!" });
+    } else {
+      setExpectedIndex(nextExpected);
+      setFeedback({ type: "ok", msg: `Played: ${need}` });
+    }
+  }
+
+  const progressPct = useMemo(() => {
+    if (!currentLine.length) return 0;
+    const steps = currentLine.length; // expected user moves only are about half; we approximate by SAN index
+    return Math.min(100, Math.round((expectedIndex / steps) * 100));
+  }, [currentLine.length, expectedIndex]);
+
+  // Build selectors
+  const groups = OPENING_LIBRARY.map((g) => g.group);
+  const sections = OPENING_LIBRARY[groupIdx]?.sections || [];
+  const openings = sections[sectionIdx]?.items || [];
+
+  return (
+    <div className="min-h-screen w-full bg-gray-50 text-gray-900">
+      <header className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+          <BookOpen className="w-6 h-6" />
+          <h1 className="text-xl font-semibold">Chess Openings Trainer</h1>
+          <span className="ml-auto text-sm text-gray-500">Practice main lines + "Other" chapters</span>
+        </div>
+      </header>
+
+      <main className="max-w-6xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Left panel: selectors */}
+        <aside className="lg:col-span-2">
+          <div className="bg-white rounded-2xl shadow p-3 space-y-3">
+            <div>
+              <label className="text-sm font-medium">Group</label>
+              <select
+                className="mt-1 w-full rounded-xl border p-2"
+                value={groupIdx}
+                onChange={(e) => {
+                  setGroupIdx(Number(e.target.value));
+                  setSectionIdx(0);
+                  setOpeningIdx(0);
+                }}
+              >
+                {groups.map((g, i) => (
+                  <option key={g} value={i}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium">Section</label>
+              <select
+                className="mt-1 w-full rounded-xl border p-2"
+                value={sectionIdx}
+                onChange={(e) => {
+                  setSectionIdx(Number(e.target.value));
+                  setOpeningIdx(0);
+                }}
+              >
+                {sections.map((s, i) => (
+                  <option key={s.title} value={i}>
+                    {s.title}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-sm font-medium flex items-center gap-2">
+                <LayoutList className="w-4 h-4" /> Opening
+              </label>
+              <select
+                className="mt-1 w-full rounded-xl border p-2"
+                value={openingIdx}
+                onChange={(e) => setOpeningIdx(Number(e.target.value))}
+              >
+                {openings.map((o, i) => (
+                  <option key={o.id} value={i}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+              {currentOpening && (
+                <p className="mt-2 text-xs text-gray-500">
+                  Training side: <b className="font-semibold">{currentOpening.side}</b>
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={autoRandomize}
+                  onChange={(e) => setAutoRandomize(e.target.checked)}
+                />
+                Randomize lines
+              </label>
+              <button
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-gray-900 text-white hover:bg-black"
+                onClick={() => startPractice(autoRandomize ? "random" : 0)}
+              >
+                <Play className="w-4 h-4" /> Start Practice
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-4 bg-white rounded-2xl shadow p-3">
+            <h3 className="text-sm font-semibold mb-2">Lines in this opening</h3>
+            <ul className="space-y-2">
+              {allLines.map((ln, idx) => (
+                <li key={idx} className="flex items-center justify-between text-sm">
+                  <span className="truncate mr-2">{prettyLine(ln)}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      className="px-2 py-1 rounded-lg border hover:bg-gray-50"
+                      onClick={() => startPractice(idx)}
+                    >
+                      Practice
+                    </button>
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                  </div>
+                </li>
+              ))}
+              {!allLines.length && <li className="text-sm text-gray-500">No lines yet.</li>}
+            </ul>
+          </div>
+        </aside>
+
+        {/* Right panel: board + feedback */}
+        <section className="lg:col-span-3 space-y-4">
+          <div className="bg-white rounded-2xl shadow p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold">{currentOpening?.name || "Select an opening"}</h2>
+                {status === "complete" && (
+                  <span className="inline-flex items-center gap-1 text-green-700 text-sm">
+                    <CheckCircle2 className="w-4 h-4" /> Completed
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border hover:bg-gray-50"
+                  onClick={showHint}
+                >
+                  <Shuffle className="w-4 h-4" /> Hint
+                </button>
+                <button
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border hover:bg-gray-50"
+                  onClick={playSolutionMove}
+                >
+                  <ChevronRight className="w-4 h-4" /> Play Solution Move
+                </button>
+                <button
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border hover:bg-gray-50"
+                  onClick={resetSession}
+                >
+                  <RotateCcw className="w-4 h-4" /> Reset
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Chessboard
+                  id="practice-board"
+                  position={chess.fen()}
+                  onPieceDrop={onDrop}
+                  boardWidth={480}
+                  customBoardStyle={{ borderRadius: 16, boxShadow: "0 8px 20px rgba(0,0,0,0.1)" }}
+                />
+              </div>
+              <div className="flex flex-col gap-3">
+                <div>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium">Progress</span>
+                    <span>{progressPct}%</span>
+                  </div>
+                  <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gray-900"
+                      style={{ width: `${progressPct}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div className="text-sm">
+                  <div className="text-gray-500">Expected next:</div>
+                  <div className="font-mono text-base">
+                    {status === "practicing" && currentLine[expectedIndex]
+                      ? currentLine[expectedIndex]
+                      : status === "complete"
+                      ? "—"
+                      : "Start practice to begin"}
+                  </div>
+                </div>
+
+                <div className={`${feedback?.type === "err" ? "text-red-700" : "text-green-700"} text-sm min-h-[24px]`}>
+                  {feedback && (
+                    <div className="inline-flex items-center gap-2">
+                      {feedback.type === "err" ? (
+                        <XCircle className="w-4 h-4" />
+                      ) : (
+                        <CheckCircle2 className="w-4 h-4" />
+                      )}
+                      <span>{feedback.msg}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="text-xs text-gray-500">Mistakes: {mistakes}</div>
+
+                <div className="text-sm">
+                  <div className="text-gray-500 mb-1">Current line:</div>
+                  <div className="font-mono bg-gray-50 rounded-xl p-2">
+                    {currentLine.length ? prettyLine(currentLine) : "—"}
+                  </div>
+                </div>
+
+                <div className="text-xs text-gray-500">
+                  Tip: If you train as Black, the trainer auto-plays White’s first move.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow p-3">
+            <h3 className="text-sm font-semibold mb-2">How to add more lines</h3>
+            <ol className="list-decimal ml-5 space-y-1 text-sm text-gray-700">
+              <li>
+                Find the opening in <code>OPENING_LIBRARY</code> and append a new SAN array to its <code>lines</code>.
+              </li>
+              <li>
+                SAN examples: <code>["e4", "e5", "Nc3", "Nc6", "f4"]</code> for a Vienna Gambit line; you can stop anywhere.
+              </li>
+              <li>
+                For Black repertoires, set <code>side: "black"</code>. The trainer will auto-play White’s first move.
+              </li>
+            </ol>
+          </div>
+        </section>
+      </main>
+
+      <footer className="max-w-6xl mx-auto p-4 text-xs text-gray-500">
+        Built for practicing lines from FCO (including “Other Openings” like the Vienna Game). Extend freely.
+      </footer>
+    </div>
+  );
+}
